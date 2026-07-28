@@ -73,3 +73,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Artefactos de corridas locales
+artifacts*/
+data_quick/

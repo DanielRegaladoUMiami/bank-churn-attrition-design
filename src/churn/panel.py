@@ -173,7 +173,14 @@ def build_cif_month_state(tables: dict[str, pd.DataFrame], cfg: Config) -> pd.Da
     state = state.merge(party[["cif_id", "as_of_month"] + pcols],
                         on=["cif_id", "as_of_month"], how="left")
 
-    num = state.select_dtypes(include=[np.number]).columns
+    # Un conteo o un monto ausente sí es un 0. Un "meses hasta…" ausente no:
+    # rellenarlo con 0 diría "vence este mes", que es exactamente lo contrario
+    # de "este cliente no tiene ese producto". Se quedan en NaN para que las
+    # features de dominio puedan distinguirlos y el imputador de los modelos
+    # los marque como faltantes.
+    NOT_APPLICABLE = {"min_months_to_payoff", "months_to_cd_maturity", "cd_rate_avg"}
+    num = [c for c in state.select_dtypes(include=[np.number]).columns
+           if c not in NOT_APPLICABLE]
     state[num] = state[num].fillna(0)
     return state.sort_values(["cif_id", "as_of_month"]).reset_index(drop=True)
 
@@ -357,14 +364,21 @@ def _involuntary_months(tables: dict[str, pd.DataFrame], cfg: Config) -> pd.Seri
 
 
 def build_panel(tables: dict[str, pd.DataFrame], cfg: Config,
-                verbose: bool = True) -> pd.DataFrame:
+                verbose: bool = True,
+                state: pd.DataFrame | None = None) -> pd.DataFrame:
     """Panel final: una fila por (cif_id, as_of_month) elegible, con etiqueta `y`.
 
     `y = 1` si el CIF tiene su evento de churn dentro de la ventana de
     performance, que empieza `gap_months + 1` meses después del as-of date.
+
+    `state` permite reusar un estado ya calculado (con o sin etiquetar) en vez
+    de reconstruirlo: el notebook lo arma antes para inspeccionarlo, y volver
+    a calcularlo aquí duplicaría la parte más lenta del pipeline.
     """
-    state = build_cif_month_state(tables, cfg)
-    state = label_attrition_state(state, cfg)
+    if state is None:
+        state = build_cif_month_state(tables, cfg)
+    if "is_attrited_state" not in state.columns:
+        state = label_attrition_state(state, cfg)
 
     p = cfg.panel
     gap = int(p.get("gap_months", 1))

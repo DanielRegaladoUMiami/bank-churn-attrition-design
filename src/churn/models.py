@@ -295,11 +295,19 @@ SEQUENCE_COLS = [
 
 
 def build_sequences(state: pd.DataFrame, index_df: pd.DataFrame,
-                    seq_cols: list[str], window: int) -> np.ndarray:
+                    seq_cols: list[str], window: int,
+                    stats: dict[str, tuple[float, float]] | None = None,
+                    return_stats: bool = False):
     """Arma el tensor [n_muestras, ventana, n_canales].
 
     Para cada fila de `index_df` (cif, as_of_month) toma los `window` meses
     que terminan en ese mes — nunca posteriores.
+
+    `stats` son las medias y desviaciones por canal con las que normalizar.
+    Se calculan una sola vez sobre el train (`return_stats=True`) y se
+    reutilizan en validación y test: si cada tensor se normalizara con las
+    suyas, un saldo de $5.000 en test y uno de $1.000 en train acabarían en
+    el mismo valor escalado, y el GRU vería un holdout desplazado.
     """
     cols = [c for c in seq_cols if c in state.columns]
     s = state.sort_values(["cif_id", "as_of_month"]).copy()
@@ -324,13 +332,19 @@ def build_sequences(state: pd.DataFrame, index_df: pd.DataFrame,
 
     arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
     # Normalización por canal (log1p en montos para domar las colas)
+    used: dict[str, tuple[float, float]] = {}
     for ci, c in enumerate(cols):
         ch = arr[:, :, ci]
         if "balance" in c or "fees" in c or "amt" in c:
             ch = np.sign(ch) * np.log1p(np.abs(ch))
-        mu, sd = ch.mean(), ch.std()
-        arr[:, :, ci] = (ch - mu) / (sd if sd > 1e-6 else 1.0)
-    return arr
+        if stats is not None and c in stats:
+            mu, sd = stats[c]
+        else:
+            mu, sd = float(ch.mean()), float(ch.std())
+            sd = sd if sd > 1e-6 else 1.0
+        used[c] = (mu, sd)
+        arr[:, :, ci] = (ch - mu) / sd
+    return (arr, used) if return_stats else arr
 
 
 class SequenceModel:

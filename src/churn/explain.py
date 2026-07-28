@@ -17,6 +17,8 @@ contrafactual, y está en `counterfactual_analysis()`.
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pandas as pd
 
@@ -188,6 +190,17 @@ def counterfactual_analysis(estimator, X: pd.DataFrame, cfg: Config,
     return out.reset_index(drop=True)
 
 
+# Identificadores y geografía. Los patrones van anclados a separadores de
+# palabra a propósito: buscar "account" suelto marcaría `n_joint_accounts`, y
+# "state" suelto marcaría `estatement_flag`. Una alerta que salta en cada
+# corrida sobre features legítimas enseña a ignorarla, que es justo lo que no
+# se quiere de un control de model risk.
+_SUSPICIOUS = (
+    r"(^|_)branch", r"(^|_)zip", r"(^|_)state($|_)",
+    r"(^|_)cif", r"(^|_)household", r"_id($|_)",
+)
+
+
 def sanity_check(importance: pd.DataFrame, expected_top: list[str] | None = None,
                  verbose: bool = True) -> dict[str, bool]:
     """Valida el SHAP contra intuición de negocio.
@@ -197,9 +210,7 @@ def sanity_check(importance: pd.DataFrame, expected_top: list[str] | None = None
     de validación.
     """
     top = importance["feature"].head(10).str.lower().tolist()
-    suspicious = [f for f in top
-                  if any(k in f for k in ("branch", "zip", "state", "_id",
-                                          "cif", "account", "household"))]
+    suspicious = [f for f in top if any(re.search(p, f) for p in _SUSPICIOUS)]
     checks = {
         "sin_proxies_geograficos_o_ids_en_top10": len(suspicious) == 0,
     }

@@ -222,18 +222,25 @@ def _add_streak_features(df: pd.DataFrame, g: str) -> pd.DataFrame:
 
 def _add_domain_features(df: pd.DataFrame) -> pd.DataFrame:
     """Ratios y banderas específicas de banca."""
-    # Loan por terminar sin ancla de depósitos: el escenario del README
+    # Loan por terminar sin ancla de depósitos: el escenario del README.
+    # La condición de tener préstamo vivo es explícita: sin ella, cualquier
+    # cliente sin préstamos y con poco saldo entraría en la bandera, que es
+    # justo la población que la feature pretende excluir.
     if {"min_months_to_payoff", "owned_balance"} <= set(df.columns):
         near_payoff = df["min_months_to_payoff"].fillna(999) <= 6
+        if "n_active_loans" in df.columns:
+            near_payoff &= df["n_active_loans"].fillna(0) > 0
         thin_deposits = df["owned_balance"].fillna(0) < 500
         df["loan_ending_no_deposit_anchor"] = (near_payoff & thin_deposits).astype(int)
         df["months_to_payoff_capped"] = df["min_months_to_payoff"].fillna(999).clip(0, 120)
 
-    # CD por vencer: gatillo de rolloff
+    # CD por vencer: gatillo de rolloff. Mismo cuidado — solo aplica a quien
+    # efectivamente tiene un CD.
     if "months_to_cd_maturity" in df.columns:
-        df["cd_maturing_3m"] = (
-            df["months_to_cd_maturity"].fillna(999).between(0, 3)
-        ).astype(int)
+        cd_maturing = df["months_to_cd_maturity"].fillna(999).between(0, 3)
+        if "n_cd" in df.columns:
+            cd_maturing &= df["n_cd"].fillna(0) > 0
+        df["cd_maturing_3m"] = cd_maturing.astype(int)
 
     # Profundidad de relación
     prod_cols = [c for c in ("n_checking", "n_savings", "n_mma", "n_cd") if c in df.columns]

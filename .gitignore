@@ -1,0 +1,75 @@
+# ─── Datos: nada de esto entra al repo, nunca ───────────────────────────
+*.csv
+*.tsv
+*.parquet
+*.feather
+*.xlsx
+*.xls
+*.sas7bdat
+*.dta
+*.sav
+*.db
+*.sqlite
+*.sqlite3
+*.pkl
+*.pickle
+*.joblib
+*.h5
+*.hdf5
+data/
+raw/
+interim/
+processed/
+extracts/
+exports/
+output/
+outputs/
+
+# ─── Credenciales y conexiones ──────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.*
+credentials.*
+config.local.*
+.odbc.ini
+tnsnames.ora
+
+# ─── Modelos entrenados (pueden memorizar datos) ────────────────────────
+models/
+*.onnx
+*.pt
+*.pth
+*.ckpt
+*.pb
+mlruns/
+mlartifacts/
+
+# ─── Notebooks: outputs pueden contener datos de clientes ───────────────
+.ipynb_checkpoints/
+*-checkpoint.ipynb
+
+# ─── Python ─────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.python-version
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+
+# ─── Sistema / editores ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

@@ -248,11 +248,25 @@ def _add_activity_state(state, tables, rel_m) -> pd.DataFrame:
         aggs["credit_amt_total"] = ("total_amount_credit", "sum")
     g = tx.groupby(["cif_id", "as_of_month"]).agg(**aggs).reset_index()
 
+    # Nómina y fuga a la competencia. En formato largo llegan como banderas por
+    # fila; en formato ancho eso no cabe —la fila es la cuenta, no el par
+    # categoría×mes—, así que el extracto los trae ya agregados como métricas
+    # mensuales propias. Se aceptan las dos formas.
     if "is_direct_deposit" in tx.columns:
         dd = (tx[tx["is_direct_deposit"].astype("boolean").fillna(False)]
               .groupby(["cif_id", "as_of_month"])["txn_count"].sum()
               .rename("dd_txn_count").reset_index())
         g = g.merge(dd, on=["cif_id", "as_of_month"], how="left")
+    elif "dd_txn_count" in tx.columns:
+        # Viene por cuenta y mes, repetido en cada fila de categoría. Hay que
+        # deduplicar antes de sumar entre cuentas: sumar tal cual lo
+        # multiplicaría por el número de categorías, y quedarse con el máximo
+        # perdería la segunda cuenta con nómina del mismo cliente.
+        dd = (tx.drop_duplicates(["cif_id", "account_id", "as_of_month"])
+              .groupby(["cif_id", "as_of_month"])["dd_txn_count"].sum()
+              .reset_index())
+        g = g.merge(dd, on=["cif_id", "as_of_month"], how="left")
+    if "dd_txn_count" in g.columns:
         g["dd_txn_count"] = g["dd_txn_count"].fillna(0)
         g["has_direct_deposit"] = (g["dd_txn_count"] > 0).astype(int)
 
@@ -262,8 +276,16 @@ def _add_activity_state(state, tables, rel_m) -> pd.DataFrame:
               .agg(competitor_outflow_amt=("total_amount_debit", "sum"),
                    competitor_txn_count=("txn_count", "sum")).reset_index())
         g = g.merge(cp, on=["cif_id", "as_of_month"], how="left")
-        g[["competitor_outflow_amt", "competitor_txn_count"]] = \
-            g[["competitor_outflow_amt", "competitor_txn_count"]].fillna(0)
+    elif "competitor_outflow_amt" in tx.columns:
+        agg_cp = {"competitor_outflow_amt": ("competitor_outflow_amt", "sum")}
+        if "competitor_txn_count" in tx.columns:
+            agg_cp["competitor_txn_count"] = ("competitor_txn_count", "sum")
+        cp = (tx.drop_duplicates(["cif_id", "account_id", "as_of_month"])
+              .groupby(["cif_id", "as_of_month"]).agg(**agg_cp).reset_index())
+        g = g.merge(cp, on=["cif_id", "as_of_month"], how="left")
+    for c in ("competitor_outflow_amt", "competitor_txn_count"):
+        if c in g.columns:
+            g[c] = g[c].fillna(0)
 
     # Categorías principales en columnas separadas
     top = ["ach_credit_in", "ach_debit_out", "zelle_out", "pos_signature",
@@ -351,7 +373,18 @@ def _involuntary_months(tables: dict[str, pd.DataFrame], cfg: Config) -> pd.Seri
             frames.append(e.groupby("cif_id")["event_date"].min())
 
     party = tables.get("party")
-    if party is not None and "deceased_flag" in party.columns:
+    # `deceased_date` manda sobre `deceased_flag`: la bandera solo dice "hoy
+    # está fallecido", no desde cuándo. En un maestro de clientes sin
+    # dimensión temporal es lo único utilizable — con la bandera sola, el
+    # cliente queda marcado durante toda su historia y se excluye del panel
+    # entero, en vez de desde el evento.
+    if party is not None and "deceased_date" in party.columns:
+        d = party.assign(_d=pd.to_datetime(party["deceased_date"], errors="coerce"))
+        d = d.dropna(subset=["_d"])
+        if len(d):
+            frames.append(d.groupby("cif_id")["_d"].min())
+    elif party is not None and "deceased_flag" in party.columns \
+            and "as_of_month" in party.columns:
         d = party[party["deceased_flag"].astype("boolean").fillna(False)]
         if len(d):
             frames.append(d.groupby("cif_id")["as_of_month"].min())

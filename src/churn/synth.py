@@ -170,16 +170,28 @@ def _close_relationships(relationships: pd.DataFrame, deposits: pd.DataFrame,
 
 def _make_party(customers: pd.DataFrame, months) -> pd.DataFrame:
     """Q1: una fila por CIF por mes."""
+    # El alta es un atributo inmutable del cliente, así que se ancla al primer
+    # mes del panel y no se recalcula en cada iteración. Derivarla de `m` la
+    # hacía avanzar un mes por cada mes del panel: el mismo CIF aparecía dado
+    # de alta en 2017 al principio del panel y en 2020 al final, lo que
+    # contradice su propio `tenure_months` y la inutiliza como ancla temporal.
+    customer_since = pd.Series(
+        months[0] - pd.to_timedelta(
+            customers["tenure_start_months"].to_numpy() * 30, unit="D"),
+        index=customers.index,
+    )
     rows = []
     for i, m in enumerate(months):
         rows.append(pd.DataFrame({
             "cif_id": customers["cif_id"],
             "as_of_month": m,
             "entity_type": customers["entity_type"],
-            "customer_since_date": m - pd.to_timedelta(
-                customers["tenure_start_months"].to_numpy() * 30, unit="D"
-            ),
-            "tenure_months": customers["tenure_start_months"] + i,
+            "customer_since_date": customer_since,
+            # Derivada de la fecha de alta, no contada aparte: con el mes de
+            # 30 días de la línea anterior, `tenure_start + i` se separaba
+            # hasta dos meses de lo que dice `customer_since_date`.
+            "tenure_months": ((m.year - customer_since.dt.year) * 12
+                              + (m.month - customer_since.dt.month)).clip(lower=0),
             "segment": customers["segment"],
             "residency_status": customers["residency_status"],
             "state": customers["state"],

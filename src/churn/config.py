@@ -24,9 +24,11 @@ TABLE_SCHEMAS: dict[str, dict[str, Any]] = {
             "age", "tenure_months", "residency_status", "country_of_residence",
             "state", "zip3", "primary_branch_id", "segment", "employee_flag",
             "kyc_risk_rating", "naics", "preferred_language", "deceased_flag",
-            "status", "merged_into_cif", "household_id",
+            # `deceased_date` es preferible a la bandera: dice desde cuándo, y
+            # es lo único utilizable si el maestro no tiene dimensión temporal.
+            "deceased_date", "status", "merged_into_cif", "household_id",
         ],
-        "dates": ["as_of_month", "customer_since_date"],
+        "dates": ["as_of_month", "customer_since_date", "deceased_date"],
     },
     "relationships": {
         "keys": ["cif_id", "account_id", "relationship_role"],

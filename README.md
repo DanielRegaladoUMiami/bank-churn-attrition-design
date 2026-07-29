@@ -1,17 +1,58 @@
 # Modelo de Churn / Attrition — Banca Retail y Comercial
 
-Documento de diseño para el pipeline de predicción de attrition de clientes (CIF),
-cubriendo depósitos y préstamos.
+Pipeline de predicción de attrition de clientes (CIF), cubriendo depósitos y
+préstamos. Metodología genérica de banca — no contiene esquemas, datos ni
+información de ninguna institución en particular.
 
-Metodología genérica de banca — no contiene esquemas, datos ni información de ninguna
-institución en particular.
+> ⚠️ Este repositorio contiene **solo diseño, metodología y código**. No debe
+> contener datos de clientes, extractos, credenciales, nombres de tablas reales ni
+> PII. Ver [`.gitignore`](.gitignore).
 
-**Estado:** diseño / pre-EDA. Pendiente: cerrar el bloque de preguntas de data
-(§4) y primera extracción SQL (Queries 1–3).
+---
 
-> ⚠️ Este repositorio contiene **solo diseño y metodología**. No debe contener datos
-> de clientes, extractos, credenciales, nombres de tablas reales ni PII.
-> Ver [`.gitignore`](.gitignore).
+## El repositorio en dos archivos
+
+| Archivo | Qué es |
+|:---|:---|
+| **`README.md`** | Este documento. La metodología completa: por qué el target es el que es, cómo se tratan los roles del CIF, cómo se evita el leakage, qué pedirle al agente SQL y qué exige Compliance. |
+| **`notebooks/churn_pipeline_colab.ipynb`** | **Todo el pipeline, en un solo notebook autocontenido.** No importa nada del repositorio ni clona nada: lleva dentro el contrato de datos, el generador sintético, el panel, las features, los modelos y la explicabilidad. |
+
+No hay módulos ni scripts aparte. El notebook es la única fuente de verdad del
+código; el README, de las decisiones.
+
+## Arranque rápido
+
+Ábrelo en Colab y ejecútalo de arriba abajo:
+
+```
+https://colab.research.google.com/github/DanielRegaladoUMiami/bank-churn-attrition-design/blob/main/notebooks/churn_pipeline_colab.ipynb
+```
+
+El notebook viene con `data.source = "synthetic"`, así que corre entero sin datos
+reales: genera un panel simulado con dinámica causal y recorre las 22 secciones
+hasta producir la lista de retención. Sirve para validar el pipeline y para ver qué
+forma tiene cada salida antes de tener los extractos.
+
+Para pasar a datos reales, dos cambios:
+
+1. Sube los extractos a `MyDrive/churn_model/data/raw/` con los nombres de la
+   [sección 5](#5-qué-pedirle-al-agente-sql).
+2. En la celda de configuración, `"source": "drive"`.
+
+Nada más. Q4–Q7 son opcionales: se puede empezar a modelar con Q1–Q3.
+
+### Estructura del notebook
+
+**Parte I — el pipeline.** Nueve secciones de definiciones; ejecutarlas no calcula
+nada. Configuración → contrato de datos → generador sintético → carga y despivote →
+panel y target → features → evaluación → modelos → explicabilidad.
+
+**Parte II — el análisis.** Trece secciones que sí ejecutan: carga, EDA, panel,
+features, split, tuning, stacking, GRU, resultados, calibración, SHAP,
+contrafactuales y lista de scoring.
+
+La única celda que hay que tocar es la de **configuración**, al principio de la
+Parte I. De ahí sale todo el comportamiento del pipeline.
 
 ---
 
@@ -412,12 +453,85 @@ un co-titular son señales tempranas de fuga.
   keys, rango de fechas, % de nulos por columna. Ahorra medio EDA.
 - Que documente cualquier filtro aplicado y cualquier columna que no exista en el core.
 
+### Si la bajada pasa por ODBC/Excel: formato ancho
+
+El panel en formato largo no cabe en Excel en cuanto hay decenas de miles de
+clientes. El tope son **1.048.576 filas**, y medido sobre datos sintéticos, por cada
+1.000 clientes y 36 meses:
+
+| Tabla | Filas / cliente | A 50.000 CIFs |
+|:--|--:|--:|
+| **transactions** | 509 | **25,4M** |
+| deposits | 85 | 4,2M |
+| party | 36 | 1,8M |
+| digital | 36 | 1,8M |
+| loans | 8,6 | 430k |
+| relationships | 3,7 | 185k |
+| events | 3,2 | 160k |
+
+`transactions` sola es el 75% del volumen. La salida es pivotar los meses a
+columnas: el tope de **columnas** es 16.384 y ahí cabe todo. La regla es una:
+
+> Cada métrica mensual se emite como `<metrica>_<AAAA>_<MM>`, una columna por mes.
+
+El notebook detecta la orientación solo. No hay que declarar nada: si una tabla trae
+columnas con el mes en el nombre y no trae `as_of_month`, se despivota al cargar. Se
+aceptan `eom_balance_2024_07`, `eom_balance_2024-07` y `eom_balance_202407`.
+
+**Q1 · party — una fila por CIF.** El cambio más rentable y el más fácil. Como los
+CIF no se reutilizan, en el eje temporal no cambia nada salvo la antigüedad, que el
+notebook recalcula desde `customer_since_date`. Pasarlo a maestro son **50.000 filas
+en vez de 1,8M**.
+
+> **Pide `deceased_date`, no `deceased_flag`.** La bandera dice "hoy está fallecido"
+> pero no desde cuándo. En un maestro sin dimensión temporal eso marca al cliente
+> durante toda su historia y lo saca del panel entero, en vez de excluirlo desde el
+> evento. Si solo llega la bandera, el notebook avisa.
+
+**Q5 · transactions — ancho por mes _y_ por categoría.** Aquí no basta con pivotar
+el mes: quedarían `cuenta × categoría`, todavía por encima del millón. La categoría
+va también en el nombre:
+
+```
+txn_count_<categoria>_<AAAA>_<MM>
+total_amount_debit_<categoria>_<AAAA>_<MM>
+total_amount_credit_<categoria>_<AAAA>_<MM>
+```
+
+Las categorías no tienen que estar en el catálogo del notebook: cualquier nombre se
+carga igual, y avisa de las que no reconoce. Los dos flags de comportamiento no
+caben en ese esquema —son atributos de la fila, no del par categoría×mes—, así que
+se piden ya agregados como métricas mensuales de la cuenta:
+
+```
+dd_txn_count_<AAAA>_<MM>              transacciones de nómina del mes
+competitor_outflow_amt_<AAAA>_<MM>    salida a otra institución
+competitor_txn_count_<AAAA>_<MM>
+```
+
+**Q3, Q4, Q6 — ancho por mes.** Índice `account_id` / `loan_id` / `cif_id` más las
+columnas estáticas, y el resto de métricas con sufijo de mes.
+
+**Q2 y Q7 — sin cambios.** No tienen dimensión temporal: 185k y 160k filas a 50.000
+CIFs. Se quedan en formato largo.
+
+Resultado: ninguna tabla pasa del millón de filas ni de las 16.384 columnas. El
+round-trip está probado — se generan datos en largo, se exportan a ancho, se
+recargan y el panel reconstruido coincide exactamente: mismas filas, misma tasa de
+churn, cero etiquetas distintas.
+
+> **Resolver la extracción no resuelve la memoria.** Con 50.000 CIFs y 36 meses el
+> panel con features ronda 1,1M de filas × ~330 columnas: unos 3 GB en `float64`. En
+> Colab gratuito (~12 GB) va justo. Si aprieta: `float32`, menos historia, o una
+> muestra estratificada de clientes.
+
 ---
 
 ## 6. Ajustes al pipeline
 
 Sobre el pipeline base (EDA → feature engineering → preprocessing → split → CV →
-ensemble → explicabilidad), cinco ajustes:
+ensemble → explicabilidad), cinco ajustes. **Todos están implementados** en el
+notebook; entre paréntesis, la sección donde vive cada uno.
 
 ### 6.1 Split
 
@@ -464,6 +578,49 @@ series, blended.** CatBoost además resuelve los categóricos de alta cardinalid
 - Validar el SHAP contra intuición de negocio antes de presentarlo. Si "número de
   sucursal" sale top-3, hay un proxy de algo.
 
+### 6.6 Qué modelos entran
+
+| Capa | Modelos | Notebook |
+|:---|:---|:---|
+| Tabulares | `logreg`, `random_forest`, `lightgbm`, `xgboost`, `catboost` (y `mlp`, definido pero desactivado) | §8, se entrenan en §15 |
+| Secuencial | GRU de PyTorch sobre `[muestras, meses, canales]` | §8, se entrena en §17 |
+| Combinación | Stacking de los top-k por CV, y blend GBM × GRU | §16 y §17 |
+
+Cuáles corren lo decide `models.enabled` en la celda de configuración. Cada uno lleva
+su propio espacio de búsqueda y se tunea con `RandomizedSearchCV` sobre
+`StratifiedGroupKFold` agrupado por CIF, optimizando PR-AUC.
+
+El desbalance se ataca por dos vías según la familia: `class_weight="balanced"` en
+los lineales y de bosque, `scale_pos_weight = (1-p)/p` en los tres GBM. Y el
+preprocesamiento es distinto para cada una: los árboles reciben imputación por
+mediana y codificación ordinal; los lineales y la red, imputación, escalado, recorte
+a ±10σ y one-hot.
+
+Dos detalles que cuestan caro si no se saben de antemano, y que están comentados en
+el código:
+
+- Todos los estimadores van con `n_jobs=1`. Anidar paralelismo dentro y fuera del
+  `RandomizedSearchCV` produce un deadlock de joblib: el proceso se queda vivo al 0%
+  de CPU, sin error.
+- El tope de `C` de la logística es deliberadamente bajo. Con clases muy
+  desbalanceadas y datos casi separables los coeficientes se disparan (separación
+  cuasi-completa) y el `matmul` desborda a infinito.
+
+### 6.7 Dónde se elige cada cosa
+
+Con un holdout out-of-time de por medio es fácil ajustar contra él sin darse cuenta.
+La regla del notebook:
+
+| Decisión | Dónde se toma |
+|:---|:---|
+| Hiperparámetros de cada modelo | CV agrupado por CIF, dentro del train |
+| Early stopping del GRU | Partición de validación agrupada, dentro del train |
+| Peso del blend GBM × GRU | La misma partición de validación |
+| Modelo base del blend | Score de CV, no el test |
+| Calibración | Primer tercio del test; se mide en el resto |
+
+El test se toca una sola vez, para reportar.
+
 ---
 
 ## 7. Riesgo regulatorio
@@ -482,7 +639,24 @@ Conviene involucrar a Compliance antes de construir, no después.
 
 ## Próximo paso
 
-Responder las preguntas de la [sección 4](#4-preguntas-concretas-sobre-la-data), o
-mandarle al agente SQL solo las **Queries 1, 2 y 3** para un EDA exploratorio de tasa
-base y distribución de saldos. Con eso se calibran los umbrales del target y se arma el
-panel builder.
+El pipeline está construido y corre de punta a punta con datos sintéticos. Lo que
+falta es aplicarlo a los datos reales, en este orden:
+
+1. **Manda al agente SQL las Queries 1, 2 y 3.** Con eso ya se puede correr el
+   notebook entero: Q4–Q7 son opcionales. Si la bajada va por ODBC/Excel, pídelas en
+   el [formato ancho](#si-la-bajada-pasa-por-odbcexcel-formato-ancho).
+2. **Corre la EDA (§11) y ajusta dos umbrales** en la celda de configuración:
+   `target.low_balance_abs`, leyéndolo de la distribución de saldos en vez de
+   inventarlo; y la historia utilizable, mirando el gráfico de aperturas y cierres —
+   si hay un pico aislado, casi seguro es una conversión de core y hay que cortar ahí.
+3. **Corre la descomposición del target (§12).** Si una sola condición explica casi
+   todos los positivos, la definición está desbalanceada y hay que revisarla antes de
+   modelar.
+4. **Revisa la tasa base por mes.** Si salta, hay un problema de datos, no de modelo.
+5. **Antes de presentar:** valida el SHAP contra intuición de negocio y corre el
+   análisis de proxies sobre `state` y `preferred_language`
+   ([sección 7](#7-riesgo-regulatorio)).
+
+Queda abierto el bloque de preguntas de la
+[sección 4](#4-preguntas-concretas-sobre-la-data): las respuestas no bloquean la
+primera corrida, pero sí condicionan cuánto hay que fiarse del resultado.

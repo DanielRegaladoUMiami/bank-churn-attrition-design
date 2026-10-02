@@ -10,15 +10,47 @@ información de ninguna institución en particular.
 
 ---
 
-## El repositorio en dos archivos
+## El repositorio en tres archivos
 
 | Archivo | Qué es |
 |:---|:---|
 | **`README.md`** | Este documento. La metodología completa: por qué el target es el que es, cómo se tratan los roles del CIF, cómo se evita el leakage, qué pedirle al agente SQL y qué exige Compliance. |
 | **`notebooks/churn_pipeline_colab.ipynb`** | **Todo el pipeline, en un solo notebook autocontenido.** No importa nada del repositorio ni clona nada: lleva dentro el contrato de datos, el generador sintético, el panel, las features, los modelos y la explicabilidad. |
+| **`notebooks/eda_households_cifs_accounts.ipynb`** | **EDA — Households, CIFs & Accounts.** Toda la historia del banco a los tres niveles de granularidad (household, CIF, cuenta) y los roles que los unen (primary owner, joint, signer, guarantor…), sobre el extracto CIF × cuenta × rol. Ver [abajo](#eda--households-cifs--accounts). |
 
-No hay módulos ni scripts aparte. El notebook es la única fuente de verdad del
+No hay módulos ni scripts aparte. Cada notebook es la única fuente de verdad de su
 código; el README, de las decisiones.
+
+### EDA — Households, CIFs & Accounts
+
+Notebook autocontenido, en el mismo estilo que el EDA de CIFs activos (paleta, helpers,
+tablas al lado de cada gráfico, observaciones por sección). Se abre en Colab:
+
+```
+https://colab.research.google.com/github/DanielRegaladoUMiami/bank-churn-attrition-design/blob/main/notebooks/eda_households_cifs_accounts.ipynb
+```
+
+- **Datos de entrada:** un extracto con una fila por CIF × cuenta × rol (household, CIF,
+  tipo de persona, residencia, fechas, segmento, rol, ownership category, cuenta, dominio
+  DD / CD / LN, producto, Select, sucursal, oficial, status, fechas de apertura y cierre,
+  saldo, país). Los nombres de columna se mapean en una sola celda de configuración
+  (`COLS`, basta un prefijo), igual que todas las reglas de negocio.
+- **`FILE_PATH = 'DEMO'`** corre todo el notebook sobre datos sintéticos con las mismas
+  columnas y los mismos problemas de calidad (fechas de tipos mezclados, households
+  fallback, cuentas sin primary owner o con dos, números de cuenta repetidos entre
+  sistemas). Sirve para verlo funcionar antes de cargar el extracto real.
+- **Reglas que deciden todo lo demás:** el saldo se cuenta **una sola vez, en el primary
+  owner**; cliente activo = dueño de al menos una cuenta abierta; CIF *connected* = sin
+  cuentas propias pero con un rol en una cuenta abierta; ex-cliente = nada abierto en
+  ningún rol. La edad detrás de un business sale del **key person** (beneficial owner →
+  guarantor → joint → co-borrower → signer…) de sus propias cuentas.
+- **Secciones:** modelo de datos y calidad (§3–4), las cuatro tablas de análisis (§5), el
+  banco hoy (§6), households (§7), CIFs en todas las combinaciones IorB × ForD × Select
+  (§8), roles y redes de relación (§9), key person y edad del decisor (§10), cuentas y
+  productos (§11), historia año a año (§12), attrition a nivel CIF y household (§13),
+  tests (§14), perfiles (§15), hallazgos y exports para Power BI (§16), preguntas abiertas (§17).
+- Ningún nombre de tabla fuente ni de la institución vive en el notebook; los outputs
+  (que llevan datos de clientes) no se suben al repositorio.
 
 ## Arranque rápido
 

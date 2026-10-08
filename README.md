@@ -44,11 +44,13 @@ https://colab.research.google.com/github/DanielRegaladoUMiami/bank-churn-attriti
   cuentas propias pero con un rol en una cuenta abierta; ex-cliente = nada abierto en
   ningún rol. La edad detrás de un business sale del **key person** (beneficial owner →
   guarantor → joint → co-borrower → signer…) de sus propias cuentas.
-- **Secciones:** modelo de datos y calidad (§3–4), las cuatro tablas de análisis (§5), el
-  banco hoy (§6), households (§7), CIFs en todas las combinaciones IorB × ForD × Select
-  (§8), roles y redes de relación (§9), key person y edad del decisor (§10), cuentas y
-  productos (§11), historia año a año (§12), attrition a nivel CIF y household (§13),
-  tests (§14), perfiles (§15), hallazgos y exports para Power BI (§16), preguntas abiertas (§17).
+- **Roadmap en cuatro preguntas:**
+  - *Parte 0 — Fundamentos:* modelo de datos y calidad (§3–4), tablas de análisis y grupos especiales (§5), el banco hoy (§6).
+  - *Parte I — Quién es el cliente:* CIFs en todas las combinaciones IorB × ForD × Select, value tiers y familias de segmento (§7); la persona detrás de cada business (§8).
+  - *Parte II — A qué está conectado:* households (§9); roles y redes de relación (§10).
+  - *Parte III — Qué tiene:* cuentas y productos (§11).
+  - *Parte IV — Cómo performa:* valor y contribución estimada (§12, con supuestos explícitos hasta tener profitability real); historia año a año (§13); attrition (§14).
+  - *Parte V — Síntesis:* tests (§15), perfiles (§16), hallazgos y exports para Power BI (§17), preguntas abiertas (§18).
 - **Grupos especiales, no exclusiones:** ejecutivos / empleados, vehículos EB-5, large
   relationships y portafolios institucionales (por oficial o sucursal) se etiquetan en
   `SPECIAL_GROUPS` y se analizan aparte (§6.4); el resto del notebook describe a los

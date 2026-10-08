@@ -49,6 +49,11 @@ https://colab.research.google.com/github/DanielRegaladoUMiami/bank-churn-attriti
   (§8), roles y redes de relación (§9), key person y edad del decisor (§10), cuentas y
   productos (§11), historia año a año (§12), attrition a nivel CIF y household (§13),
   tests (§14), perfiles (§15), hallazgos y exports para Power BI (§16), preguntas abiertas (§17).
+- **Grupos especiales, no exclusiones:** ejecutivos / empleados, vehículos EB-5, large
+  relationships y portafolios institucionales (por oficial o sucursal) se etiquetan en
+  `SPECIAL_GROUPS` y se analizan aparte (§6.4); el resto del notebook describe a los
+  clientes *core*. Los valores (nombres, IDs, oficiales) se llenan en la copia propia,
+  nunca en el repositorio.
 - Ningún nombre de tabla fuente ni de la institución vive en el notebook; los outputs
   (que llevan datos de clientes) no se suben al repositorio.
 
